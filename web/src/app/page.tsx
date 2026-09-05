@@ -139,6 +139,9 @@ export default function Home() {
                 {n}
               </a>
             ))}
+            <a href="/mcp" style={{ fontFamily: sans, fontSize: 13, fontWeight: 500, color: slate, textDecoration: 'none' }}>
+              Agents
+            </a>
             <a
               href="/quests"
               style={{
