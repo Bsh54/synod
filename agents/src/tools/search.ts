@@ -2,6 +2,8 @@
 // Uses Tavily when TAVILY_API_KEY is set, otherwise falls back to the
 // key-free Wikipedia search API so the swarm runs out of the box.
 
+import { config } from '../config';
+
 export interface SearchResult {
 	title: string;
 	url: string;
@@ -15,8 +17,8 @@ async function tavilySearch(query: string, key: string): Promise<SearchResult[]>
 		body: JSON.stringify({
 			api_key: key,
 			query,
-			max_results: 5,
-			search_depth: 'basic',
+			max_results: config.resultsPerQuery,
+			search_depth: config.searchDepth,
 		}),
 	});
 	if (!res.ok) throw new Error(`tavily ${res.status}`);
@@ -50,8 +52,18 @@ export async function search(query: string): Promise<SearchResult[]> {
 	}
 }
 
-// Break a broad question into a few angles the Legate agents chase in parallel.
-export function subQuestions(question: string): string[] {
+// Break a broad question into several angles the Legate agents chase in parallel.
+export function subQuestions(question: string, count: number): string[] {
 	const q = question.trim().replace(/\?+$/, '');
-	return [q, `${q} overview`, `${q} recent developments`];
+	const angles = [
+		q,
+		`${q} overview`,
+		`${q} recent developments`,
+		`${q} how it works`,
+		`${q} examples`,
+		`${q} limitations`,
+		`${q} comparison`,
+		`${q} best practices`,
+	];
+	return angles.slice(0, Math.max(1, count));
 }

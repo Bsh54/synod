@@ -24,6 +24,14 @@ export interface ResearchRun {
 	rejected: number;
 	summary?: string;
 	sources?: { title: string; url: string }[];
+	feedbackRounds: number;
+	timeline: TimelineMark[];
 	createdAt: string;
 	completedAt?: string;
+}
+
+export interface TimelineMark {
+	t: number; // ms epoch
+	agent: string; // Legate-0, Assessor, Scribe, Planner
+	kind: string; // search | finding | verified | rejected | feedback | synthesize | complete
 }

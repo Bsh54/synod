@@ -1,6 +1,8 @@
-// Legate: the discovery agent. On a research request it fans out several
-// searches at once and streams each finding onto the bus the moment it
-// arrives, without waiting for the other queries to finish.
+// Legate: a discovery agent. Several Legates run in parallel, each owning a
+// slice of the search lanes. A Legate reacts to two things:
+//   - search.requested  (forward work from the Planner)
+//   - coverage.low      (backward request from the Scribe for more evidence)
+// so discovery is not a one-way stage: it can be re-triggered mid-run.
 
 import {
 	Agent,
@@ -11,58 +13,81 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { sendEvent, state } from '../runtime';
-import { FINDING_PRODUCED, RESEARCH_REQUESTED, type ResearchRequested } from '../events';
-import { search, subQuestions } from '../tools/search';
+import { mark, sendEvent, state } from '../runtime';
+import {
+	COVERAGE_LOW,
+	FINDING_PRODUCED,
+	SEARCH_REQUESTED,
+	type CoverageLow,
+	type SearchRequested,
+} from '../events';
+import { search } from '../tools/search';
 import type { Finding } from '../types';
 
-class OnResearchRequested extends SituationSpecification {
-	isSatisfiedBy({ event, participant }: SituationContext): boolean {
-		return event.type === RESEARCH_REQUESTED && event.producerId !== participant.getId();
+async function runSearch(agent: Agent, index: number, runId: string, query: string): Promise<void> {
+	mark(runId, `Legate-${index}`, 'search');
+	const results = await search(query);
+	for (const [i, r] of results.entries()) {
+		const finding: Finding = {
+			id: `${runId}:${query}:${i}:${Date.now()}`,
+			runId,
+			query,
+			title: r.title,
+			url: r.url,
+			snippet: r.snippet,
+		};
+		const run = state().runs.get(runId);
+		if (run) run.findings.push(finding);
+		mark(runId, `Legate-${index}`, 'finding');
+		sendEvent(SemanticEvent.create(FINDING_PRODUCED, agent.getId(), { runId, finding }), agent.getId());
+		// Stagger so findings visibly stream while other lanes keep running.
+		await new Promise((res) => setTimeout(res, 300));
 	}
 }
 
-const discover: SituationProcessor = {
-	apply({ event, participant }: SituationContext): void {
-		if (!(participant instanceof Agent)) return;
-		const { runId, question } = event.payload as ResearchRequested;
+function makeHandlers(index: number, pool: number): SituationHandler[] {
+	const onSearch: SituationHandler = {
+		specification: new (class extends SituationSpecification {
+			isSatisfiedBy({ event }: SituationContext): boolean {
+				if (event.type !== SEARCH_REQUESTED) return false;
+				return (event.payload as SearchRequested).lane % pool === index;
+			}
+		})(),
+		processor: {
+			apply({ event, participant }: SituationContext): void {
+				if (!(participant instanceof Agent)) return;
+				const { runId, query } = event.payload as SearchRequested;
+				void runSearch(participant, index, runId, query);
+			},
+		} satisfies SituationProcessor,
+	};
 
-		// Fire every sub-question concurrently. Each resolves on its own and
-		// emits findings independently, so discovery overlaps verification.
-		for (const query of subQuestions(question)) {
-			void (async () => {
-				const results = await search(query);
-				for (const [i, r] of results.entries()) {
-					const finding: Finding = {
-						id: `${runId}:${query}:${i}`,
-						runId,
-						query,
-						title: r.title,
-						url: r.url,
-						snippet: r.snippet,
-					};
-					const run = state().runs.get(runId);
-					if (run) run.findings.push(finding);
-					sendEvent(
-						SemanticEvent.create(FINDING_PRODUCED, participant.getId(), { runId, finding }),
-						participant.getId(),
-					);
-					// Small stagger so findings visibly stream in while the other
-					// queries keep running concurrently.
-					await new Promise((r) => setTimeout(r, 350));
-				}
-			})();
-		}
-	},
-};
+	const onCoverageLow: SituationHandler = {
+		specification: new (class extends SituationSpecification {
+			isSatisfiedBy({ event }: SituationContext): boolean {
+				if (event.type !== COVERAGE_LOW) return false;
+				return (event.payload as CoverageLow).round % pool === index;
+			}
+		})(),
+		processor: {
+			apply({ event, participant }: SituationContext): void {
+				if (!(participant instanceof Agent)) return;
+				const { runId, query } = event.payload as CoverageLow;
+				mark(runId, `Legate-${index}`, 'feedback');
+				void runSearch(participant, index, runId, query);
+			},
+		} satisfies SituationProcessor,
+	};
 
-export function createLegate(): Agent {
+	return [onSearch, onCoverageLow];
+}
+
+export function createLegate(index: number, pool: number): Agent {
 	return createAgent({
-		name: 'Legate',
+		name: `Legate-${index}`,
 		capabilities: ['search'],
-		instruction:
-			'You are Legate, a discovery agent. You search the web for a research question and report findings as you go.',
+		instruction: 'You are Legate, a discovery agent. You search the web and report findings as you go.',
 		tools: [],
-		handlers: [{ specification: new OnResearchRequested(), processor: discover } satisfies SituationHandler],
+		handlers: makeHandlers(index, pool),
 	});
 }

@@ -5,10 +5,12 @@
 import { SemanticEvent, createHuman, type Human } from '@mozaik-ai/core';
 import { initializeRuntime, join, sendEvent, state, ResearchState } from './runtime';
 import { RESEARCH_REQUESTED } from './events';
+import { createPlanner } from './agents/planner';
 import { createLegate } from './agents/legate';
 import { createAssessor } from './agents/assessor';
 import { createScribe } from './agents/scribe';
 import { buildSupportedModels } from './inference';
+import { config } from './config';
 import type { ResearchRun } from './types';
 
 let coordinator: Human;
@@ -23,7 +25,8 @@ export function initSwarm(): void {
 	});
 	coordinator = createHuman({ name: 'Coordinator', capabilities: [], handlers: [] });
 	join(coordinator);
-	join(createLegate());
+	join(createPlanner());
+	for (let i = 0; i < config.scouts; i++) join(createLegate(i, config.scouts));
 	join(createAssessor());
 	join(createScribe());
 	started = true;
@@ -38,6 +41,8 @@ export function startRun(question: string): string {
 		findings: [],
 		verified: [],
 		rejected: 0,
+		feedbackRounds: 0,
+		timeline: [],
 		createdAt: new Date().toISOString(),
 	};
 	state().runs.set(runId, run);

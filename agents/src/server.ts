@@ -46,6 +46,8 @@ function toDetail(run: ResearchRun) {
 			.slice(0, 40)
 			.map((f) => ({ title: f.title, url: f.url, domain: domainOf(f.url), score: f.score })),
 		sources: (run.sources ?? []).map((s, i) => ({ n: i + 1, title: s.title, url: s.url, domain: domainOf(s.url) })),
+		feedbackRounds: run.feedbackRounds,
+		timeline: run.timeline.slice(-150),
 	};
 }
 

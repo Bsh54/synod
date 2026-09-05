@@ -22,3 +22,12 @@ export const {
 export function state(): ResearchState {
 	return resolveRuntime().state;
 }
+
+// Record who did what and when, so the console can prove the agents overlap
+// in time instead of running as a straight pipeline.
+export function mark(runId: string, agent: string, kind: string): void {
+	const run = resolveRuntime().state.runs.get(runId);
+	if (!run) return;
+	run.timeline.push({ t: Date.now(), agent, kind });
+	if (run.timeline.length > 300) run.timeline.shift();
+}

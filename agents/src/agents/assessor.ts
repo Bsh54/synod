@@ -11,13 +11,14 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { sendEvent, state } from '../runtime';
+import { mark, sendEvent, state } from '../runtime';
 import {
 	FINDING_PRODUCED,
 	FINDING_REJECTED,
 	FINDING_VERIFIED,
 	type FindingProduced,
 } from '../events';
+import { config } from '../config';
 import type { VerifiedFinding } from '../types';
 
 class OnFindingProduced extends SituationSpecification {
@@ -44,15 +45,17 @@ const assess: SituationProcessor = {
 		const run = state().runs.get(runId);
 		const score = scoreFinding(finding.query, finding.snippet);
 
-		if (score >= 0.4) {
+		if (score >= config.verifyThreshold) {
 			const verified: VerifiedFinding = { ...finding, score };
 			if (run) run.verified.push(verified);
+			mark(runId, 'Assessor', 'verified');
 			sendEvent(
 				SemanticEvent.create(FINDING_VERIFIED, participant.getId(), { runId, finding: verified }),
 				participant.getId(),
 			);
 		} else {
 			if (run) run.rejected += 1;
+			mark(runId, 'Assessor', 'rejected');
 			sendEvent(
 				SemanticEvent.create(FINDING_REJECTED, participant.getId(), {
 					runId,

@@ -11,12 +11,17 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { sendEvent, state } from '../runtime';
-import { FINDING_VERIFIED, RESEARCH_COMPLETED, type FindingVerified } from '../events';
+import { mark, sendEvent, state } from '../runtime';
+import {
+	COVERAGE_LOW,
+	FINDING_VERIFIED,
+	RESEARCH_COMPLETED,
+	type FindingVerified,
+} from '../events';
+import { config } from '../config';
 import type { VerifiedFinding } from '../types';
 import { complete, llmAvailable } from '../tools/llm';
 
-const SETTLE_MS = 2500;
 const settleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 // The ordered, deduped evidence used for both the prompt and the [n] citations.
@@ -26,7 +31,7 @@ function topFindings(verified: VerifiedFinding[]): VerifiedFinding[] {
 		.slice()
 		.sort((a, b) => b.score - a.score)
 		.filter((f) => (seen.has(f.title) ? false : (seen.add(f.title), true)))
-		.slice(0, 8);
+		.slice(0, config.topSources);
 }
 
 // Deterministic fallback used when no LLM is configured or every model fails.
@@ -68,21 +73,43 @@ const synthesize: SituationProcessor = {
 			setTimeout(() => {
 				void (async () => {
 					const current = state().runs.get(runId);
-					if (current && current.status === 'running') {
-						const top = topFindings(current.verified);
-						current.sources = top.map((f) => ({ title: f.title, url: f.url }));
-						const answer = await writeAnswer(current.objectives, top);
-						current.status = 'completed';
-						current.completedAt = new Date().toISOString();
-						current.summary = answer;
+					if (!current || current.status !== 'running') {
+						settleTimers.delete(runId);
+						return;
+					}
+
+					// Backward edge: if coverage is thin and we have rounds left,
+					// ask the Legates for more instead of sealing a weak answer.
+					if (current.verified.length < config.minVerified && current.feedbackRounds < config.maxFeedbackRounds) {
+						current.feedbackRounds += 1;
+						mark(runId, 'Scribe', 'feedback');
 						sendEvent(
-							SemanticEvent.create(RESEARCH_COMPLETED, participant.getId(), { runId, summary: answer }),
+							SemanticEvent.create(COVERAGE_LOW, participant.getId(), {
+								runId,
+								query: `${current.objectives} detailed analysis`,
+								round: current.feedbackRounds,
+							}),
 							participant.getId(),
 						);
+						settleTimers.delete(runId);
+						return; // a fresh finding.verified will re-arm the settle timer
 					}
+
+					const top = topFindings(current.verified);
+					current.sources = top.map((f) => ({ title: f.title, url: f.url }));
+					mark(runId, 'Scribe', 'synthesize');
+					const answer = await writeAnswer(current.objectives, top);
+					current.status = 'completed';
+					current.completedAt = new Date().toISOString();
+					current.summary = answer;
+					mark(runId, 'Scribe', 'complete');
+					sendEvent(
+						SemanticEvent.create(RESEARCH_COMPLETED, participant.getId(), { runId, summary: answer }),
+						participant.getId(),
+					);
 					settleTimers.delete(runId);
 				})();
-			}, SETTLE_MS),
+			}, config.settleMs),
 		);
 	},
 };
