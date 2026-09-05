@@ -24,6 +24,7 @@ const maxW = 1120;
 
 interface Item { title: string; url: string; domain: string; query?: string; score?: number; }
 interface Source { n: number; title: string; url: string; domain: string; }
+interface Mark { t: number; agent: string; kind: string; }
 interface Quest {
   questId: string;
   status: string;
@@ -35,7 +36,46 @@ interface Quest {
   findingList?: Item[];
   verifiedList?: Item[];
   sources?: Source[];
+  timeline?: Mark[];
+  feedbackRounds?: number;
   results?: { summary?: string };
+}
+
+function agentRank(a: string): number {
+  if (a.startsWith('Planner')) return 0;
+  if (a.startsWith('Legate')) return 1;
+  if (a.startsWith('Assessor')) return 2;
+  return 3; // Scribe
+}
+function agentColor(a: string): string {
+  if (a.startsWith('Planner')) return silver;
+  if (a.startsWith('Legate')) return accent;
+  if (a.startsWith('Assessor')) return amber;
+  return ink; // Scribe
+}
+
+// Activity timeline: one row per agent on a shared time axis. Overlapping
+// marks across rows are the visual proof the swarm runs concurrently.
+function Timeline({ marks }: { marks: Mark[] }) {
+  if (!marks.length) return null;
+  const t0 = marks[0].t;
+  const t1 = Math.max(marks[marks.length - 1].t, t0 + 1);
+  const span = Math.max(t1 - t0, 1);
+  const agents = [...new Set(marks.map((m) => m.agent))].sort((a, b) => agentRank(a) - agentRank(b) || a.localeCompare(b));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {agents.map((a) => (
+        <div key={a} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 74, fontFamily: sans, fontSize: 10, color: slate, textAlign: 'right' }}>{a}</span>
+          <div style={{ position: 'relative', flex: 1, height: 10, background: fog, borderRadius: 5 }}>
+            {marks.filter((m) => m.agent === a).map((m, i) => (
+              <span key={i} title={m.kind} style={{ position: 'absolute', left: `${((m.t - t0) / span) * 100}%`, top: 1, width: 3, height: 8, background: agentColor(a), borderRadius: 1 }} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // Turn [n] citations in the answer into clickable links to their source.
@@ -185,6 +225,7 @@ export default function ConsolePage() {
   const shown = quests.filter((q) => (filter === 'all' ? true : filter === 'active' ? isRunning(q.status) : !isRunning(q.status)));
   const d = detail;
   const dRunning = d ? isRunning(d.status) : false;
+  const scoutCount = d?.timeline ? new Set(d.timeline.filter((m) => m.agent.startsWith('Legate')).map((m) => m.agent)).size : 0;
 
   return (
     <div style={{ background: canvas, color: ink, fontFamily: sans, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -253,10 +294,21 @@ export default function ConsolePage() {
 
                 {open && (
                   <div style={{ padding: '4px 4px 28px' }}>
-                    {/* Live board: three concurrent lanes */}
+                    {/* Activity timeline: proves the agents overlap in time */}
+                    {(d?.timeline?.length ?? 0) > 0 && (
+                      <div style={{ border: `1px solid ${ash}`, borderRadius: 10, padding: '16px 18px', marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                          <Label>Activity timeline · agents running concurrently</Label>
+                          {(d?.feedbackRounds ?? 0) > 0 && <Label style={{ color: accent }}>{d?.feedbackRounds} feedback round(s)</Label>}
+                        </div>
+                        <Timeline marks={d!.timeline!} />
+                      </div>
+                    )}
+
+                    {/* Live board: concurrent lanes */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
                       <div style={{ border: `1px solid ${ash}`, borderRadius: 10, overflow: 'hidden' }}>
-                        <LaneHead name="Legate" role="discovering sources" count={d?.findingList?.length ?? q.findings ?? 0} active={dRunning} />
+                        <LaneHead name={scoutCount > 1 ? `Legate ×${scoutCount}` : 'Legate'} role="parallel scouts discovering" count={d?.findingList?.length ?? q.findings ?? 0} active={dRunning} />
                         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                           {(d?.findingList ?? []).map((it) => <SourceCard key={'f' + it.url} item={it} />)}
                           {(!d?.findingList || d.findingList.length === 0) && <div style={{ padding: 16, fontFamily: sans, fontSize: 12, color: silver }}>searching…</div>}
