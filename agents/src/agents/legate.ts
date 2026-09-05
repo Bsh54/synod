@@ -1,20 +1,25 @@
-// Legate: a discovery agent driven by the model. On a search request it starts
-// a runLoop; the model decides which web_search calls to make and when it has
-// enough. Several Legates run their own loops concurrently (each its own
-// loopId). A safety net searches directly if the model calls no tool.
+// Legate: a model-driven discovery agent. For each task it runs one inference
+// through the Mozaik runner with the web_search tool exposed; the model decides
+// which searches to make (tool calls), and Legate executes them, streaming
+// findings onto the bus. This is the "model proposes, client executes" pattern:
+// a single, safe turn with no fragile follow-up inference. A direct-search
+// fallback guarantees results even if the model proposes no call.
 //   - search.requested : forward work from the Planner
 //   - coverage.low     : backward request from the Scribe for more evidence
-// so discovery is not a one-way stage: it can be re-triggered mid-run.
 
 import {
 	Agent,
+	FunctionCallItem,
+	ModelContext,
+	SystemMessageItem,
+	UserMessageItem,
 	SituationSpecification,
 	createAgent,
 	type SituationContext,
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { runLoop, state } from '../runtime';
+import { resolveRuntime, state } from '../runtime';
 import {
 	COVERAGE_LOW,
 	SEARCH_REQUESTED,
@@ -24,23 +29,39 @@ import {
 import { emitFindings, makeWebSearchTool } from '../tools/websearch';
 import { config } from '../config';
 
-// Drive one discovery task through the model, with a direct-search fallback.
-function research(agent: Agent, runId: string, query: string, instruction: string): void {
+const SYSTEM =
+	'You are Legate, a discovery agent. Given a research task, call the web_search tool for the one or two angles worth exploring. Only make tool calls; do not write prose.';
+
+async function research(agent: Agent, runId: string, query: string, task: string): Promise<void> {
 	const before = state().runs.get(runId)?.findings.length ?? 0;
 	const tool = makeWebSearchTool(agent, runId);
 
-	runLoop(agent.getId(), instruction, {
-		model: config.agentModel,
-		context: agent.getMemory().getContext(),
-		tools: [tool],
-	});
+	try {
+		const runner = resolveRuntime().getInferenceRunner();
+		const context = ModelContext.create()
+			.addContextItem(SystemMessageItem.create(SYSTEM))
+			.addContextItem(UserMessageItem.create(task));
+		const out = await runner.run({ model: config.agentModel, context, tools: [tool] });
 
-	// Safety net: if the model produced no findings (e.g. inference failed or it
-	// never called the tool), search directly so the run still yields results.
-	setTimeout(() => {
-		const now = state().runs.get(runId)?.findings.length ?? 0;
-		if (now === before) void emitFindings(agent, runId, query);
-	}, config.agentFallbackMs);
+		// Execute exactly what the model proposed.
+		const calls = out.items.filter((i) => i.getType() === 'function_call') as FunctionCallItem[];
+		for (const call of calls) {
+			if (call.name !== 'web_search') continue;
+			let args: { query?: string } = {};
+			try {
+				args = JSON.parse(call.args || '{}');
+			} catch {
+				/* ignore malformed args */
+			}
+			await tool.invoke({ query: args.query || query });
+		}
+	} catch {
+		/* inference failed (e.g. no credits); the fallback below covers it */
+	}
+
+	// Safety net: if nothing came back, search the original query directly.
+	const produced = (state().runs.get(runId)?.findings.length ?? 0) - before;
+	if (produced === 0) await emitFindings(agent, runId, query);
 }
 
 function makeHandlers(index: number, pool: number): SituationHandler[] {
@@ -55,7 +76,7 @@ function makeHandlers(index: number, pool: number): SituationHandler[] {
 			apply({ event, participant }: SituationContext): void {
 				if (!(participant instanceof Agent)) return;
 				const { runId, query } = event.payload as SearchRequested;
-				research(participant, runId, query, `Research this question and call web_search for the angles you need: ${query}`);
+				void research(participant, runId, query, `Research this question: ${query}`);
 			},
 		} satisfies SituationProcessor,
 	};
@@ -71,7 +92,7 @@ function makeHandlers(index: number, pool: number): SituationHandler[] {
 			apply({ event, participant }: SituationContext): void {
 				if (!(participant instanceof Agent)) return;
 				const { runId, query } = event.payload as CoverageLow;
-				research(participant, runId, query, `Coverage is thin. Search deeper on: ${query}`);
+				void research(participant, runId, query, `Coverage is thin. Search deeper on: ${query}`);
 			},
 		} satisfies SituationProcessor,
 	};
@@ -83,8 +104,7 @@ export function createLegate(index: number, pool: number): Agent {
 	return createAgent({
 		name: `Legate-${index}`,
 		capabilities: ['inference', 'search'],
-		instruction:
-			'You are Legate, a discovery agent. Given a research question, call the web_search tool for the angles worth exploring (one or two calls), then stop. Do not answer in prose; your job is to gather sources.',
+		instruction: SYSTEM,
 		tools: [],
 		handlers: makeHandlers(index, pool),
 	});
