@@ -23,6 +23,7 @@ export interface ResearchRun {
 	verified: VerifiedFinding[];
 	rejected: number;
 	summary?: string;
+	sources?: { title: string; url: string }[];
 	createdAt: string;
 	completedAt?: string;
 }

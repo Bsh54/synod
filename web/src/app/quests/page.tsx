@@ -23,6 +23,7 @@ const sans = "system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif
 const maxW = 1120;
 
 interface Item { title: string; url: string; domain: string; query?: string; score?: number; }
+interface Source { n: number; title: string; url: string; domain: string; }
 interface Quest {
   questId: string;
   status: string;
@@ -33,7 +34,22 @@ interface Quest {
   rejected?: number;
   findingList?: Item[];
   verifiedList?: Item[];
+  sources?: Source[];
   results?: { summary?: string };
+}
+
+// Turn [n] citations in the answer into clickable links to their source.
+function renderCited(text: string, sources: Source[]): React.ReactNode[] {
+  return text.split(/(\[\d+\])/g).map((part, i) => {
+    const m = part.match(/^\[(\d+)\]$/);
+    if (m) {
+      const src = sources.find((s) => s.n === Number(m[1]));
+      if (src) return (
+        <a key={i} href={src.url} target="_blank" rel="noopener noreferrer" style={{ color: accent, fontWeight: 600, textDecoration: 'none' }}>{part}</a>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
 }
 
 function Label({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -85,6 +101,8 @@ export default function ConsolePage() {
   const [detail, setDetail] = useState<Quest | null>(null);
   const [loaded, setLoaded] = useState(false);
   const kicked = useRef(false);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const scrolledFor = useRef<string | null>(null);
 
   const fetchQuests = useCallback(async () => {
     try {
@@ -155,6 +173,14 @@ export default function ConsolePage() {
     const id = setInterval(() => fetchDetail(openId), running ? 900 : 4000);
     return () => clearInterval(id);
   }, [openId, detail?.status, fetchDetail]);
+
+  // When the final answer lands, scroll down to focus on it (once per run).
+  useEffect(() => {
+    if (detail && !isRunning(detail.status) && detail.results?.summary && scrolledFor.current !== detail.questId) {
+      scrolledFor.current = detail.questId;
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+    }
+  }, [detail?.status, detail?.questId, detail?.results?.summary]);
 
   const shown = quests.filter((q) => (filter === 'all' ? true : filter === 'active' ? isRunning(q.status) : !isRunning(q.status)));
   const d = detail;
@@ -250,13 +276,43 @@ export default function ConsolePage() {
                         <LaneHead name="Scribe" role="assembling the answer" count={d?.results?.summary ? 1 : 0} active={dRunning} />
                         <div style={{ maxHeight: 320, overflowY: 'auto', padding: 16 }}>
                           {d?.results?.summary ? (
-                            <p style={{ fontFamily: sans, fontSize: 13.5, lineHeight: 1.7, color: slate, whiteSpace: 'pre-wrap', margin: 0 }}>{d.results.summary}</p>
+                            dRunning ? (
+                              <p style={{ fontFamily: sans, fontSize: 13, lineHeight: 1.65, color: slate, whiteSpace: 'pre-wrap', margin: 0 }}>{d.results.summary}</p>
+                            ) : (
+                              <div style={{ fontFamily: sans, fontSize: 13, color: accent, fontWeight: 600 }}>Answer ready below ↓</div>
+                            )
                           ) : (
                             <div style={{ fontFamily: sans, fontSize: 12, color: silver }}>waiting for verified findings…</div>
                           )}
                         </div>
                       </div>
                     </div>
+
+                    {/* Final result, brought into focus once the run completes */}
+                    {!dRunning && d?.results?.summary && (
+                      <div ref={resultRef} style={{ marginTop: 24, border: `1px solid ${ash}`, borderRadius: 12, padding: '28px 26px', background: fog }}>
+                        <Label style={{ color: slate }}>Result</Label>
+                        <h3 style={{ fontFamily: serif, fontWeight: 300, fontSize: 24, letterSpacing: '-0.01em', color: ink, margin: '10px 0 18px' }}>{d.objectives}</h3>
+                        <p style={{ fontFamily: sans, fontSize: 15.5, lineHeight: 1.8, color: ink, whiteSpace: 'pre-wrap', margin: 0 }}>
+                          {renderCited(d.results.summary, d.sources ?? [])}
+                        </p>
+                        {(d.sources?.length ?? 0) > 0 && (
+                          <div style={{ marginTop: 24, borderTop: `1px solid ${ash}`, paddingTop: 18 }}>
+                            <Label style={{ color: slate }}>Sources</Label>
+                            <ol style={{ margin: '12px 0 0', padding: 0, listStyle: 'none' }}>
+                              {d.sources!.map((s) => (
+                                <li key={s.n} style={{ display: 'flex', gap: 10, padding: '6px 0', fontFamily: sans, fontSize: 13.5 }}>
+                                  <span style={{ color: accent, fontWeight: 600, minWidth: 24 }}>[{s.n}]</span>
+                                  <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ color: ink, textDecoration: 'none', lineHeight: 1.5 }}>
+                                    {s.title} <span style={{ color: silver }}>· {s.domain}</span>
+                                  </a>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
