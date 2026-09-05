@@ -11,7 +11,7 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { mark, sendEvent } from '../runtime';
+import { sendEvent } from '../runtime';
 import { RESEARCH_REQUESTED, SEARCH_REQUESTED, type ResearchRequested } from '../events';
 import { subQuestions } from '../tools/search';
 import { config } from '../config';
@@ -28,7 +28,6 @@ const plan: SituationProcessor = {
 		const { runId, question } = event.payload as ResearchRequested;
 		const queries = subQuestions(question, config.subQuestions);
 		queries.forEach((query, lane) => {
-			mark(runId, 'Planner', 'search');
 			sendEvent(
 				SemanticEvent.create(SEARCH_REQUESTED, participant.getId(), { runId, query, lane }),
 				participant.getId(),

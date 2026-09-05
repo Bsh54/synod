@@ -11,7 +11,7 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { mark, sendEvent, state } from '../runtime';
+import { sendEvent, state } from '../runtime';
 import {
 	FINDING_PRODUCED,
 	FINDING_REJECTED,
@@ -48,14 +48,12 @@ const assess: SituationProcessor = {
 		if (score >= config.verifyThreshold) {
 			const verified: VerifiedFinding = { ...finding, score };
 			if (run) run.verified.push(verified);
-			mark(runId, 'Assessor', 'verified');
 			sendEvent(
 				SemanticEvent.create(FINDING_VERIFIED, participant.getId(), { runId, finding: verified }),
 				participant.getId(),
 			);
 		} else {
 			if (run) run.rejected += 1;
-			mark(runId, 'Assessor', 'rejected');
 			sendEvent(
 				SemanticEvent.create(FINDING_REJECTED, participant.getId(), {
 					runId,

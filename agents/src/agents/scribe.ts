@@ -11,7 +11,7 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { mark, sendEvent, state } from '../runtime';
+import { sendEvent, state } from '../runtime';
 import {
 	COVERAGE_LOW,
 	FINDING_VERIFIED,
@@ -82,7 +82,6 @@ const synthesize: SituationProcessor = {
 					// ask the Legates for more instead of sealing a weak answer.
 					if (current.verified.length < config.minVerified && current.feedbackRounds < config.maxFeedbackRounds) {
 						current.feedbackRounds += 1;
-						mark(runId, 'Scribe', 'feedback');
 						sendEvent(
 							SemanticEvent.create(COVERAGE_LOW, participant.getId(), {
 								runId,
@@ -97,12 +96,10 @@ const synthesize: SituationProcessor = {
 
 					const top = topFindings(current.verified);
 					current.sources = top.map((f) => ({ title: f.title, url: f.url }));
-					mark(runId, 'Scribe', 'synthesize');
 					const answer = await writeAnswer(current.objectives, top);
 					current.status = 'completed';
 					current.completedAt = new Date().toISOString();
 					current.summary = answer;
-					mark(runId, 'Scribe', 'complete');
 					sendEvent(
 						SemanticEvent.create(RESEARCH_COMPLETED, participant.getId(), { runId, summary: answer }),
 						participant.getId(),

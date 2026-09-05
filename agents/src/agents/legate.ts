@@ -13,7 +13,7 @@ import {
 	type SituationHandler,
 	type SituationProcessor,
 } from '@mozaik-ai/core';
-import { mark, sendEvent, state } from '../runtime';
+import { sendEvent, state } from '../runtime';
 import {
 	COVERAGE_LOW,
 	FINDING_PRODUCED,
@@ -25,7 +25,6 @@ import { search } from '../tools/search';
 import type { Finding } from '../types';
 
 async function runSearch(agent: Agent, index: number, runId: string, query: string): Promise<void> {
-	mark(runId, `Legate-${index}`, 'search');
 	const results = await search(query);
 	for (const [i, r] of results.entries()) {
 		const finding: Finding = {
@@ -38,7 +37,6 @@ async function runSearch(agent: Agent, index: number, runId: string, query: stri
 		};
 		const run = state().runs.get(runId);
 		if (run) run.findings.push(finding);
-		mark(runId, `Legate-${index}`, 'finding');
 		sendEvent(SemanticEvent.create(FINDING_PRODUCED, agent.getId(), { runId, finding }), agent.getId());
 		// Stagger so findings visibly stream while other lanes keep running.
 		await new Promise((res) => setTimeout(res, 300));
@@ -73,7 +71,6 @@ function makeHandlers(index: number, pool: number): SituationHandler[] {
 			apply({ event, participant }: SituationContext): void {
 				if (!(participant instanceof Agent)) return;
 				const { runId, query } = event.payload as CoverageLow;
-				mark(runId, `Legate-${index}`, 'feedback');
 				void runSearch(participant, index, runId, query);
 			},
 		} satisfies SituationProcessor,
