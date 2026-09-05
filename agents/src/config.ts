@@ -17,4 +17,7 @@ export const config = {
 	maxFeedbackRounds: num('SYNOD_MAX_FEEDBACK', 2), // cap on backward requests per run
 	topSources: num('SYNOD_TOP_SOURCES', 12), // sources handed to Scribe / cited
 	settleMs: num('SYNOD_SETTLE_MS', 2500), // quiet window before sealing a run
+	// Model that drives the Legate agent loop (must support tool calling).
+	agentModel: process.env.SYNOD_AGENT_MODEL || 'meta/llama-3.1-8b-instruct',
+	agentFallbackMs: num('SYNOD_AGENT_FALLBACK_MS', 4000), // if the model calls no tool, search directly
 };

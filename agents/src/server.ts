@@ -12,6 +12,16 @@ import type { ResearchRun } from './types';
 
 const PORT = Number(process.env.PORT ?? 8211);
 
+// Agent loops are fire-and-forget; an inference error inside one must never take
+// down the whole swarm. Legate already streamed its findings before any such
+// error, so we log and keep serving.
+process.on('unhandledRejection', (reason) => {
+	console.error('[synod] unhandledRejection:', reason instanceof Error ? reason.message : reason);
+});
+process.on('uncaughtException', (err) => {
+	console.error('[synod] uncaughtException:', err.message);
+});
+
 function toApi(run: ResearchRun) {
 	return {
 		questId: run.questId,
