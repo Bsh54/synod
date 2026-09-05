@@ -1,18 +1,27 @@
-// LLM client for RodiumAI (OpenAI-compatible gateway).
-// Tries a chain of free models in order and falls through to the next one
-// on any failure or rate limit, so synthesis keeps working.
+// LLM synthesis routed through the Mozaik inference runner.
+// The runner is configured (see ../inference.ts) with RodiumAI's free models,
+// so completions flow through Mozaik's own inference layer, not a side channel.
+// We try the models in order and fall through on any failure or rate limit.
 
-const BASE_URL = process.env.RODIUM_BASE_URL || 'https://api.rodiumai.io/v1';
+import {
+	ContextItem,
+	ModelContext,
+	ModelMessageItem,
+	SystemMessageItem,
+	UserMessageItem,
+} from '@mozaik-ai/core';
+import { resolveRuntime } from '../runtime';
 
-// Free models (1M tokens/day each), best first. Override with RODIUM_MODELS.
+// Fallback chain, cheapest first so a low RODI balance still completes.
+// Override with RODIUM_MODELS.
 const DEFAULT_MODELS = [
-	'openai/gpt-5.6-sol',
-	'meta/llama-4-maverick-17b-128e',
-	'meta/llama-3.3-70b-instruct',
-	'meta/llama-4-scout-17b-16e',
-	'meta/llama-3.1-70b-instruct',
 	'meta/llama-3.1-8b-instruct',
 	'meta/llama-3-8b-instruct',
+	'meta/llama-4-scout-17b-16e',
+	'meta/llama-3.1-70b-instruct',
+	'meta/llama-3.3-70b-instruct',
+	'meta/llama-4-maverick-17b-128e',
+	'openai/gpt-5.6-sol',
 ];
 
 export function freeModels(): string[] {
@@ -29,28 +38,39 @@ export interface ChatMessage {
 	content: string;
 }
 
-async function callModel(model: string, messages: ChatMessage[], key: string): Promise<string | null> {
-	const res = await fetch(`${BASE_URL}/chat/completions`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-		body: JSON.stringify({ model, messages, temperature: 0.3, max_tokens: 900 }),
-	});
-	if (!res.ok) throw new Error(`${model} -> ${res.status}`);
-	const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-	const text = data.choices?.[0]?.message?.content?.trim();
-	return text || null;
+function buildContext(messages: ChatMessage[]): ModelContext {
+	let ctx = ModelContext.create();
+	for (const m of messages) {
+		if (m.role === 'system') ctx = ctx.addContextItem(SystemMessageItem.create(m.content));
+		else if (m.role === 'user') ctx = ctx.addContextItem(UserMessageItem.create(m.content));
+		else ctx = ctx.addContextItem(ModelMessageItem.rehydrate({ text: m.content }));
+	}
+	return ctx;
+}
+
+function extractText(items: ContextItem[]): string | null {
+	for (const it of items) {
+		if (it.getType() === 'message') {
+			const text = (it as ModelMessageItem).content?.text?.trim();
+			if (text) return text;
+		}
+	}
+	return null;
 }
 
 // Returns the first model's answer that succeeds, or null if every model fails.
 export async function complete(messages: ChatMessage[]): Promise<{ text: string; model: string } | null> {
-	const key = process.env.RODIUM_API_KEY;
-	if (!key) return null;
+	if (!llmAvailable()) return null;
+	const runner = resolveRuntime().getInferenceRunner();
+	const context = buildContext(messages);
 	for (const model of freeModels()) {
 		try {
-			const text = await callModel(model, messages, key);
+			const out = await runner.run({ model, context, tools: [] });
+			const text = extractText(out.items);
 			if (text) return { text, model };
-		} catch {
-			// try the next model in the fallback chain
+			console.error(`[llm] ${model}: no text in output items (${out.items.map((i) => i.getType()).join(',')})`);
+		} catch (e) {
+			console.error(`[llm] ${model} failed:`, e instanceof Error ? e.message : e);
 		}
 	}
 	return null;

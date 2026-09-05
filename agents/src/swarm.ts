@@ -8,6 +8,7 @@ import { RESEARCH_REQUESTED } from './events';
 import { createLegate } from './agents/legate';
 import { createAssessor } from './agents/assessor';
 import { createScribe } from './agents/scribe';
+import { buildSupportedModels } from './inference';
 import type { ResearchRun } from './types';
 
 let coordinator: Human;
@@ -15,7 +16,11 @@ let started = false;
 
 export function initSwarm(): void {
 	if (started) return;
-	initializeRuntime({ state: new ResearchState() });
+	const supportedModels = buildSupportedModels();
+	initializeRuntime({
+		state: new ResearchState(),
+		inferenceRunnerConfig: supportedModels.length ? { supportedModels } : undefined,
+	});
 	coordinator = createHuman({ name: 'Coordinator', capabilities: [], handlers: [] });
 	join(coordinator);
 	join(createLegate());
