@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { API_CONFIG } from '@/config/api';
 
 /**
  * synod: concurrent research swarm landing page.
@@ -104,21 +103,12 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  const startResearch = async () => {
+  // Hand the question straight to the console, which shows it immediately and
+  // starts the run there.
+  const startResearch = () => {
     if (!question.trim() || status === 'sending') return;
     setStatus('sending');
-    try {
-      await fetch(`${API_CONFIG.QUEST_ENGINE_URL}/quests`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objectives: question }),
-      });
-      setStatus('sent');
-      setTimeout(() => setStatus('idle'), 3000);
-      setQuestion('');
-    } catch {
-      setStatus('idle');
-    }
+    window.location.href = '/quests?q=' + encodeURIComponent(question.trim());
   };
 
   const nav = ['Overview', 'Runtime'];
@@ -296,16 +286,16 @@ export default function Home() {
       </section>
 
       {/* Stats strip */}
-      <section style={{ borderTop: `1px solid ${ash}`, background: ink, color: canvas }}>
-        <div style={{ maxWidth: maxW, margin: '0 auto', padding: '56px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 32, textAlign: 'center' }}>
+      <section style={{ borderTop: `1px solid ${ash}`, borderBottom: `1px solid ${ash}` }}>
+        <div style={{ maxWidth: maxW, margin: '0 auto', padding: '48px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
           {[
             { v: '3', l: 'agent roles' },
             { v: '∥', l: 'run concurrently' },
             { v: '0', l: 'central schedulers' },
             { v: '∞', l: 'questions' },
-          ].map((s) => (
-            <div key={s.l}>
-              <div style={{ fontFamily: serif, fontWeight: 200, fontSize: 52, lineHeight: 1 }}>{s.v}</div>
+          ].map((s, i) => (
+            <div key={s.l} style={{ textAlign: 'center', padding: '8px 16px', borderLeft: i === 0 ? 'none' : `1px solid ${ash}` }}>
+              <div style={{ fontFamily: serif, fontWeight: 200, fontSize: 52, lineHeight: 1, color: ink }}>{s.v}</div>
               <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: silver, marginTop: 10 }}>{s.l}</div>
             </div>
           ))}
