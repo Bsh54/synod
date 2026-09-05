@@ -1,6 +1,6 @@
 'use client';
 
-// Inert web3 stubs — crypto/wallet layer removed for synod.
+// Inert web3 stubs: crypto/wallet layer removed for synod.
 // No wallet connection, no on-chain payments. These keep the UI compiling
 // while the real coordination moves to the Mozaik agent runtime.
 

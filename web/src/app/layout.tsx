@@ -3,7 +3,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "synod — concurrent research swarm",
+  title: "synod: concurrent research swarm",
   description: "Ask once. A swarm of agents answers at the same time. synod runs discovery, verification and synthesis agents in parallel on a shared event bus, built on the Mozaik runtime.",
   keywords: ["AI agents", "concurrent agents", "research", "Mozaik", "TypeScript", "event bus", "swarm"],
   icons: {
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "synod — concurrent research swarm",
+    title: "synod: concurrent research swarm",
     description: "Ask once. A swarm of agents answers at the same time.",
   },
 };
