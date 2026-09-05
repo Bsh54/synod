@@ -1,0 +1,14 @@
+[Unit]
+Description=synod swarm API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/projects/synod/agents
+ExecStart=/usr/bin/npx tsx src/server.ts
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=synod web console
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/projects/synod/web
+ExecStart=/usr/bin/npm run start -- -p 8210 -H 127.0.0.1
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
