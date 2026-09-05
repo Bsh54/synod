@@ -26,6 +26,28 @@ function toApi(run: ResearchRun) {
 	};
 }
 
+function domainOf(url: string): string {
+	try {
+		return new URL(url).hostname.replace(/^www\./, '');
+	} catch {
+		return '';
+	}
+}
+
+// Full detail for the live run view: the actual findings and verifications,
+// so the console can show the swarm working instead of just counts.
+function toDetail(run: ResearchRun) {
+	return {
+		...toApi(run),
+		findingList: run.findings.slice(-40).map((f) => ({ title: f.title, url: f.url, domain: domainOf(f.url), query: f.query })),
+		verifiedList: run.verified
+			.slice()
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 40)
+			.map((f) => ({ title: f.title, url: f.url, domain: domainOf(f.url), score: f.score })),
+	};
+}
+
 function send(res: import('node:http').ServerResponse, code: number, body: unknown) {
 	const data = JSON.stringify(body);
 	res.writeHead(code, {
@@ -72,7 +94,7 @@ const server = createServer((req, res) => {
 	const match = path.match(/^\/quests\/(.+)$/);
 	if (req.method === 'GET' && match) {
 		const run = getRun(match[1]);
-		return run ? send(res, 200, toApi(run)) : send(res, 404, { error: 'not found' });
+		return run ? send(res, 200, toDetail(run)) : send(res, 404, { error: 'not found' });
 	}
 
 	send(res, 404, { error: 'not found' });

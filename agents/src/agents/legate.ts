@@ -47,6 +47,9 @@ const discover: SituationProcessor = {
 						SemanticEvent.create(FINDING_PRODUCED, participant.getId(), { runId, finding }),
 						participant.getId(),
 					);
+					// Small stagger so findings visibly stream in while the other
+					// queries keep running concurrently.
+					await new Promise((r) => setTimeout(r, 350));
 				}
 			})();
 		}
